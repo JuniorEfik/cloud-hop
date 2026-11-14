@@ -28,6 +28,7 @@ import {
   parseAppRoute,
   type RouteChange,
 } from "./router.js";
+import { isMeteorExtensionAvailable } from "./wallet-availability.js";
 
 const root = document.querySelector<HTMLDivElement>("#root");
 
@@ -473,6 +474,21 @@ root.innerHTML = `
       Got it <span>✓</span>
     </button>
   </dialog>
+  <dialog class="auth-dialog notice-dialog" data-meteor-required-dialog aria-labelledby="meteor-required-title" aria-describedby="meteor-required-description">
+    <button type="button" class="dialog-close" data-action="close-meteor-required" aria-label="Close">×</button>
+    <span class="detail-label">Wallet required</span>
+    <h2 id="meteor-required-title">Install Meteor Wallet</h2>
+    <p class="dialog-intro" id="meteor-required-description">
+      The Meteor Wallet browser extension was not detected. Install it, refresh
+      this page, and then try connecting again.
+    </p>
+    <div class="notice-actions">
+      <a class="primary-button notice-button" href="https://chromewebstore.google.com/detail/meteor-wallet/pcndjhkinnkaohffealmlmhaepkpmgkb" target="_blank" rel="noreferrer">
+        Install Meteor <span>↗</span>
+      </a>
+      <button type="button" class="text-button" data-action="close-meteor-required">Maybe later</button>
+    </div>
+  </dialog>
   </div>
 `;
 
@@ -498,6 +514,9 @@ const bestBlockLink = requireElement<HTMLAnchorElement>("[data-best-block-link]"
 const authDialog = requireElement<HTMLDialogElement>("[data-auth-dialog]");
 const googleDisabledDialog = requireElement<HTMLDialogElement>(
   "[data-google-disabled-dialog]",
+);
+const meteorRequiredDialog = requireElement<HTMLDialogElement>(
+  "[data-meteor-required-dialog]",
 );
 const walletButton = requireElement<HTMLButtonElement>("[data-auth='wallet']");
 const googleButton = requireElement<HTMLButtonElement>("[data-auth='google']");
@@ -1237,6 +1256,7 @@ root.addEventListener("click", (event) => {
   }
   if (action === "close-auth") authDialog.close();
   if (action === "close-google-disabled") googleDisabledDialog.close();
+  if (action === "close-meteor-required") meteorRequiredDialog.close();
   if (action === "logout" && nearClient !== null && !authBusy) {
     setAuthBusy(true);
     void nearClient
@@ -1277,6 +1297,11 @@ authDialog.addEventListener("click", (event) => {
   if (method === "google" && googleSignInDisabled) {
     authDialog.close();
     googleDisabledDialog.showModal();
+    return;
+  }
+  if (method === "wallet" && !isMeteorExtensionAvailable(window)) {
+    authDialog.close();
+    meteorRequiredDialog.showModal();
     return;
   }
 

@@ -12,6 +12,7 @@
     "src/near-utils.ts",
     "src/public-data.ts",
     "src/router.ts",
+    "src/wallet-availability.ts",
     "src/wallet-connection-manager.ts",
     "test/**/*.ts"
   ]

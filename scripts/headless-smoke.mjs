@@ -223,7 +223,7 @@ let page;
 try {
   const api = startService(
     process.execPath,
-    ["apps/api/dist/src/server.js"],
+    ["apps/api/dist/src/start.js"],
     { API_PORT: String(apiPort), WEB_ORIGINS: webUrl },
   );
   children.push(api);
@@ -425,6 +425,11 @@ try {
         configurable: false,
         enumerable: false,
         value: probe,
+      });
+      Object.defineProperty(window, "meteorComV2", {
+        configurable: false,
+        enumerable: false,
+        value: {},
       });
       const inject = () => {
         window.dispatchEvent(new CustomEvent("near-wallet-injected", { detail: wallet }));

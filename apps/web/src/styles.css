@@ -963,6 +963,14 @@ footer {
   line-height: 1.65;
 }
 .notice-button { min-width: 150px; }
+.notice-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 24px;
+}
+.notice-actions .primary-button { text-decoration: none; }
 .auth-option strong, .auth-option small { display: block; }
 .auth-option strong { font-size: 12px; }
 .auth-option small { margin-top: 4px; color: var(--muted); font-size: 9px; }
