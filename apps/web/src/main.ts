@@ -1,4 +1,5 @@
 import { CloudHopGame } from "./game.js";
+import { isNetlifyDeployment } from "./hosting.js";
 import {
   NearArcadeClient,
   describeNearError,
@@ -458,6 +459,20 @@ root.innerHTML = `
       </button>
     </div>
   </dialog>
+  <dialog class="auth-dialog notice-dialog" data-google-disabled-dialog aria-labelledby="google-disabled-title" aria-describedby="google-disabled-description">
+    <button type="button" class="dialog-close" data-action="close-google-disabled" aria-label="Close">×</button>
+    <span class="detail-label">Netlify deployment</span>
+    <h2 id="google-disabled-title">Google sign-in is unavailable</h2>
+    <p class="dialog-intro" id="google-disabled-description">
+      Google sign-in is not supported on this hosted Netlify demo because its
+      FastAuth callback cannot be enabled here. It remains available when Cloud
+      Hop is run locally with an approved FastAuth configuration.
+    </p>
+    <p class="notice-copy">Connect with Meteor Wallet to save your scores on this deployment.</p>
+    <button type="button" class="primary-button notice-button" data-action="close-google-disabled">
+      Got it <span>✓</span>
+    </button>
+  </dialog>
   </div>
 `;
 
@@ -481,6 +496,9 @@ const playerLatest = requireElement<HTMLElement>("[data-player-latest]");
 const playerStats = requireElement<HTMLElement>("[data-player-stats]");
 const bestBlockLink = requireElement<HTMLAnchorElement>("[data-best-block-link]");
 const authDialog = requireElement<HTMLDialogElement>("[data-auth-dialog]");
+const googleDisabledDialog = requireElement<HTMLDialogElement>(
+  "[data-google-disabled-dialog]",
+);
 const walletButton = requireElement<HTMLButtonElement>("[data-auth='wallet']");
 const googleButton = requireElement<HTMLButtonElement>("[data-auth='google']");
 const leaderboardRowsElement = requireElement<HTMLElement>("[data-leaderboard-rows]");
@@ -531,6 +549,7 @@ const routeLinks = [
   ...root.querySelectorAll<HTMLAnchorElement>("a[data-route]"),
 ];
 let appReady = false;
+const googleSignInDisabled = isNetlifyDeployment(window.location.hostname);
 
 const renderRoute = ({ route, kind }: RouteChange): void => {
   for (const screen of routeScreens) {
@@ -1217,6 +1236,7 @@ root.addEventListener("click", (event) => {
     }
   }
   if (action === "close-auth") authDialog.close();
+  if (action === "close-google-disabled") googleDisabledDialog.close();
   if (action === "logout" && nearClient !== null && !authBusy) {
     setAuthBusy(true);
     void nearClient
@@ -1254,6 +1274,11 @@ authDialog.addEventListener("click", (event) => {
   if (!(target instanceof Element) || authBusy || nearClient === null) return;
   const method = target.closest<HTMLElement>("[data-auth]")?.dataset.auth;
   if (method !== "wallet" && method !== "google") return;
+  if (method === "google" && googleSignInDisabled) {
+    authDialog.close();
+    googleDisabledDialog.showModal();
+    return;
+  }
 
   const attempt = authAttempt + 1;
   authAttempt = attempt;
@@ -1294,6 +1319,8 @@ const initializeNear = async (): Promise<void> => {
     setAuthBusy(false);
     if (!configuration.sponsorConfigured) {
       googleButton.title = "Google sign-in is temporarily unavailable.";
+    } else if (googleSignInDisabled) {
+      googleButton.title = "Google sign-in is unavailable on this Netlify deployment.";
     }
     contractProof.href = `${configuration.explorerUrl}/address/${encodeURIComponent(configuration.contractId)}`;
     nearClient = await NearArcadeClient.create(configuration);

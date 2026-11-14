@@ -956,6 +956,13 @@ footer {
 }
 
 .google-icon { color: #2758a5; background: #f5f7ff; }
+.notice-copy {
+  margin: 18px 0 24px;
+  color: var(--ink);
+  font-size: 11px;
+  line-height: 1.65;
+}
+.notice-button { min-width: 150px; }
 .auth-option strong, .auth-option small { display: block; }
 .auth-option strong { font-size: 12px; }
 .auth-option small { margin-top: 4px; color: var(--muted); font-size: 9px; }

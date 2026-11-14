@@ -8,6 +8,7 @@
   },
   "include": [
     "src/env.d.ts",
+    "src/hosting.ts",
     "src/near-utils.ts",
     "src/public-data.ts",
     "src/router.ts",
