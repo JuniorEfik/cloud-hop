@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": ".",
+    "outDir": "build-test",
+    "types": ["node"]
+  },
+  "include": [
+    "src/env.d.ts",
+    "src/near-utils.ts",
+    "src/public-data.ts",
+    "src/router.ts",
+    "src/wallet-connection-manager.ts",
+    "test/**/*.ts"
+  ]
+}

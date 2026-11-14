@@ -1,0 +1,31 @@
+{
+  "networkId": "testnet",
+  "rpcUrl": "https://test.rpc.fastnear.com",
+  "explorerUrl": "https://testnet.nearblocks.io",
+  "contractId": "near-arcade-contract-bf1dd35d6d.testnet",
+  "contractExplorerUrl": "https://testnet.nearblocks.io/address/near-arcade-contract-bf1dd35d6d.testnet",
+  "deploymentTransactionHash": "w6gJ49iRcrqbtm6z8FYnaAV3s1qKoRWYp3jWXnN8nQo",
+  "deploymentTransactionUrl": "https://testnet.nearblocks.io/txns/w6gJ49iRcrqbtm6z8FYnaAV3s1qKoRWYp3jWXnN8nQo",
+  "gameId": "cloud-hop",
+  "rulesetVersion": "cloud-hop-v1",
+  "rulesetSha256": "d5484f336a0f95a0e7b90705943f6511db29426f1621615be4cf7ed78f49e220",
+  "currentTournamentId": "weekly-togg5u",
+  "lastAcceptedJourney": {
+    "verifiedAt": "2026-11-13T20:37:10Z",
+    "sessionId": "12543db36f20f201715d6b93aff781abb41c9c253d14abdc1d5cace577daa5bb",
+    "sessionTransactionHash": "EEam7AfDT5UHxtfzKCxmuhs2GUwreqxMqYDZL3PaSyks",
+    "sessionTransactionUrl": "https://testnet.nearblocks.io/txns/EEam7AfDT5UHxtfzKCxmuhs2GUwreqxMqYDZL3PaSyks",
+    "score": 1,
+    "scoreTransactionHash": "GbxSzsiQ64rkX9ddFKXm2AeXXRAQWwuT2UgL4ZAkDSeu",
+    "scoreTransactionUrl": "https://testnet.nearblocks.io/txns/GbxSzsiQ64rkX9ddFKXm2AeXXRAQWwuT2UgL4ZAkDSeu",
+    "acceptedBlockHeight": "277560040",
+    "playerAcceptedRuns": 6,
+    "tournamentEligibleRuns": 5
+  },
+  "acceleratedProof": {
+    "tournamentId": "demo-toghul",
+    "resultHash": "dfde5b1c089a56d3f255040ad9be524fbedef3c3705394d417e86c3fd5be756f",
+    "finalizationTransactionHash": "AgfWNn7DRhRPcnEkz2iQmZViQnmHa3WHnoKbFbKm3cE6",
+    "finalizationTransactionUrl": "https://testnet.nearblocks.io/txns/AgfWNn7DRhRPcnEkz2iQmZViQnmHa3WHnoKbFbKm3cE6"
+  }
+}

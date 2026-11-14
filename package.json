@@ -1,0 +1,38 @@
+{
+  "name": "near-arcade",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "contracts/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @near-arcade/game-core && npm run build -w @near-arcade/api && npm run build -w @near-arcade/contract && npm run build -w @near-arcade/web",
+    "build:production": "node scripts/build-production.mjs",
+    "build:netlify": "npm run build -w @near-arcade/game-core && npm run build -w @near-arcade/api && node scripts/build-netlify-function.mjs && PUBLIC_API_BASE_URL= npm run build -w @near-arcade/web",
+    "dev": "node scripts/dev.mjs",
+    "start": "node scripts/start-production.mjs",
+    "test": "npm run test -w @near-arcade/game-core && npm run test -w @near-arcade/api && npm run test -w @near-arcade/contract && npm run test -w @near-arcade/web",
+    "typecheck": "npm run typecheck -w @near-arcade/game-core && npm run typecheck -w @near-arcade/api && npm run typecheck -w @near-arcade/contract && npm run typecheck -w @near-arcade/web",
+    "check": "npm run typecheck && npm test && npm run build && npm run security:frontend",
+    "security:frontend": "node scripts/check-frontend-secrets.mjs",
+    "provision:testnet": "node scripts/provision-testnet-sponsor.mjs",
+    "provision:relayer": "node scripts/provision-testnet-relayer.mjs",
+    "deploy:testnet": "npm run build -w @near-arcade/game-core && npm run build -w @near-arcade/contract && node scripts/deploy-testnet.mjs",
+    "smoke:testnet": "npm run build -w @near-arcade/game-core && npm run build -w @near-arcade/api && node scripts/smoke-test-contract.mjs",
+    "smoke:tournament-demo": "npm run build -w @near-arcade/game-core && npm run build -w @near-arcade/api && node scripts/smoke-demo-tournament.mjs",
+    "smoke:web": "npm run build -w @near-arcade/api && node scripts/headless-smoke.mjs",
+    "smoke:production": "npm run build:production && node scripts/production-smoke.mjs",
+    "acceptance": "node scripts/final-acceptance.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "esbuild": "0.28.1",
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

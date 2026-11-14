@@ -1,0 +1,14 @@
+{
+  "name": "@near-arcade/contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.test.json && node --test --experimental-test-isolation=none --test-reporter=spec build-test/test/*.test.js"
+  },
+  "devDependencies": {
+    "near-sdk-js": "2.0.0"
+  }
+}

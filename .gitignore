@@ -1,0 +1,18 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+.env
+.env.*
+!.env.example
+.npm-cache/
+coverage/
+build/
+build-test/
+dev-dist/
+packages/game-core/src/*.js
+packages/game-core/src/*.js.map
+
+# Local and generated Netlify folders
+.netlify/
+apps/web/netlify/

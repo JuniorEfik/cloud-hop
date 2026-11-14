@@ -1,0 +1,18 @@
+{
+  "name": "@near-arcade/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "node --enable-source-maps dist/src/start.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test --experimental-test-isolation=none --test-reporter=spec dist/test/*.test.js"
+  },
+  "dependencies": {
+    "@near-arcade/game-core": "0.1.0",
+    "@noble/curves": "1.8.1",
+    "bs58": "6.0.0",
+    "near-api-js": "5.1.1"
+  }
+}
