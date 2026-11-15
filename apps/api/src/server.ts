@@ -30,7 +30,9 @@ const initialization = Promise.all([
 const chainReader = new RpcArcadeChainReader(config.rpcUrl, config.contractId);
 const replayVerifier = new ReplayVerifierService(config, chainReader);
 const publicReads = new PublicReadService(config, chainReader);
-const contractActivity = new ContractActivityService(config);
+const contractActivity = new ContractActivityService(config, {
+  reader: chainReader,
+});
 const replayLimiter = new MinuteRateLimiter(config.verifierPerIpMinuteLimit);
 const webOutputDirectory = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),

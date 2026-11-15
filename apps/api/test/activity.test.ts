@@ -3,6 +3,13 @@ import test from "node:test";
 
 import { ContractActivityService } from "../src/activity.js";
 import { config } from "../src/config.js";
+import type { ContractViewReader } from "../src/read-model.js";
+
+class FakeReader implements ContractViewReader {
+  async view<Value>(): Promise<Value> {
+    return { total: 1 } as Value;
+  }
+}
 
 const transaction = (
   hash: string,
@@ -29,10 +36,43 @@ test("contract activity maps successful arcade calls to explorer proofs", async 
     },
     {
       now: () => Date.parse("2026-11-15T00:00:00.000Z"),
-      fetcher: async () => {
+      reader: new FakeReader(),
+      fetcher: async (input) => {
         fetchCalls += 1;
+        const url = new URL(input);
+        if (url.pathname.startsWith("/v1/txns/")) {
+          return new Response(
+            JSON.stringify({
+              txns: [
+                {
+                  actions: [
+                    {
+                      method: "submit_verified_score",
+                      args: JSON.stringify({ score: 24 }),
+                    },
+                  ],
+                },
+              ],
+            }),
+          );
+        }
+        if (url.searchParams.get("cursor") === "older") {
+          return new Response(
+            JSON.stringify({
+              txns: [
+                transaction(
+                  "5uVP8RJDQkNYVnujkFtAYTHUhgkgDVBBKe4ANzmoytQR",
+                  "pilot.testnet",
+                  "90",
+                  ["join_tournament"],
+                ),
+              ],
+            }),
+          );
+        }
         return new Response(
           JSON.stringify({
+            cursor: "older",
             txns: [
               transaction(
                 "H9mtqiSp71gaUeKstoNTE8MscuzRTW1wcaYzyckcKz25",
@@ -75,9 +115,17 @@ test("contract activity maps successful arcade calls to explorer proofs", async 
     feed.rows[0]?.playerExplorerUrl,
     "https://explorer.testnet/address/pilot.testnet",
   );
+  assert.equal(feed.rows[0]?.score, 24);
+  assert.deepEqual(feed.totals, {
+    players: 1,
+    gamesStarted: 1,
+    verifiedScores: 1,
+    tournamentEntries: 1,
+    complete: true,
+  });
 
   await service.getFeed();
-  assert.equal(fetchCalls, 1);
+  assert.equal(fetchCalls, 3);
 });
 
 test("contract activity returns stale cached rows during an indexer outage", async () => {

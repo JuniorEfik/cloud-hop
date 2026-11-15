@@ -191,6 +191,13 @@ test("contract activity parser accepts clickable NEAR transaction updates", () =
     contractId: "arcade.testnet",
     updatedAt: "2026-11-15T00:00:00.000Z",
     stale: false,
+    totals: {
+      players: 1,
+      gamesStarted: 3,
+      verifiedScores: 2,
+      tournamentEntries: 1,
+      complete: true,
+    },
     rows: [
       {
         id: "tx:session-started",
@@ -200,6 +207,7 @@ test("contract activity parser accepts clickable NEAR transaction updates", () =
         transactionHash: "transaction-hash",
         transactionExplorerUrl: "https://explorer/txns/transaction-hash",
         playerExplorerUrl: "https://explorer/address/pilot.testnet",
+        score: null,
       },
     ],
   };

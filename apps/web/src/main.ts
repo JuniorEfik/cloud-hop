@@ -384,6 +384,12 @@ root.innerHTML = `
           </div>
           <span data-activity-status role="status" aria-live="polite">Syncing Testnet activity…</span>
         </header>
+        <div class="activity-stats" aria-label="Cloud Hop contract totals">
+          <article><span>Verified players</span><strong data-activity-stat="players">—</strong></article>
+          <article><span>Games started</span><strong data-activity-stat="games">—</strong></article>
+          <article><span>Verified scores</span><strong data-activity-stat="scores">—</strong></article>
+          <article><span>Tournament entries</span><strong data-activity-stat="entries">—</strong></article>
+        </div>
         <div class="activity-feed" data-activity-rows aria-live="polite">
           <div class="compact-empty"><p>Loading confirmed contract updates…</p></div>
         </div>
@@ -576,6 +582,10 @@ const menuTournamentStatus = requireElement<HTMLElement>("[data-menu-tournament-
 const activityRowsElement = requireElement<HTMLElement>("[data-activity-rows]");
 const activityStatus = requireElement<HTMLElement>("[data-activity-status]");
 const activityRetry = requireElement<HTMLButtonElement>("[data-activity-retry]");
+const activityPlayers = requireElement<HTMLElement>('[data-activity-stat="players"]');
+const activityGames = requireElement<HTMLElement>('[data-activity-stat="games"]');
+const activityScores = requireElement<HTMLElement>('[data-activity-stat="scores"]');
+const activityEntries = requireElement<HTMLElement>('[data-activity-stat="entries"]');
 const profileName = requireElement<HTMLElement>("[data-profile-name]");
 const profileMethod = requireElement<HTMLElement>("[data-profile-method]");
 const profileCopy = requireElement<HTMLElement>("[data-profile-copy]");
@@ -663,6 +673,25 @@ const activityDescriptions: Record<ContractActivity["kind"], string> = {
   "session-abandoned": "closed an unfinished game session",
 };
 
+const describeActivity = (activity: ContractActivity): string =>
+  activity.kind === "score-recorded" && activity.score !== null
+    ? "scored " +
+      activity.score.toLocaleString() +
+      " verified " +
+      (activity.score === 1 ? "point" : "points")
+    : activityDescriptions[activity.kind];
+
+const renderActivityTotal = (
+  element: HTMLElement,
+  value: number | null,
+  complete = true,
+): void => {
+  element.textContent =
+    value === null
+      ? "—"
+      : value.toLocaleString() + (complete ? "" : "+");
+};
+
 const renderContractActivity = (feed: ContractActivityFeed): void => {
   activityRowsElement.replaceChildren();
   activityRetry.hidden = true;
@@ -672,6 +701,22 @@ const renderContractActivity = (feed: ContractActivityFeed): void => {
         hour: "2-digit",
         minute: "2-digit",
       }).format(new Date(feed.updatedAt))}`;
+  renderActivityTotal(activityPlayers, feed.totals.players);
+  renderActivityTotal(
+    activityGames,
+    feed.totals.gamesStarted,
+    feed.totals.complete,
+  );
+  renderActivityTotal(
+    activityScores,
+    feed.totals.verifiedScores,
+    feed.totals.complete,
+  );
+  renderActivityTotal(
+    activityEntries,
+    feed.totals.tournamentEntries,
+    feed.totals.complete,
+  );
 
   if (feed.rows.length === 0) {
     activityRowsElement.innerHTML =
@@ -696,7 +741,8 @@ const renderContractActivity = (feed: ContractActivityFeed): void => {
     player.rel = "noreferrer";
     player.title = activity.playerId;
     player.textContent = compactAccountId(activity.playerId);
-    sentence.append(player, ` ${activityDescriptions[activity.kind]}.`);
+    const description = describeActivity(activity);
+    sentence.append(player, ` ${description}.`);
 
     const time = document.createElement("time");
     time.textContent = formatChainTimestamp(activity.timestampNs);
@@ -710,7 +756,7 @@ const renderContractActivity = (feed: ContractActivityFeed): void => {
     proof.textContent = "View transaction ↗";
     proof.setAttribute(
       "aria-label",
-      `View ${activityDescriptions[activity.kind]} transaction for ${activity.playerId}`,
+      `View ${description} transaction for ${activity.playerId}`,
     );
 
     row.append(pulse, content, proof);

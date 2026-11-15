@@ -144,12 +144,22 @@ export interface ContractActivity {
   readonly transactionHash: string;
   readonly transactionExplorerUrl: string;
   readonly playerExplorerUrl: string;
+  readonly score: number | null;
+}
+
+export interface ContractActivityTotals {
+  readonly players: number | null;
+  readonly gamesStarted: number;
+  readonly verifiedScores: number;
+  readonly tournamentEntries: number;
+  readonly complete: boolean;
 }
 
 export interface ContractActivityFeed {
   readonly contractId: string;
   readonly updatedAt: string;
   readonly stale: boolean;
+  readonly totals: ContractActivityTotals;
   readonly rows: readonly ContractActivity[];
 }
 
@@ -317,7 +327,11 @@ const isContractActivity = (value: unknown): value is ContractActivity => {
     /^\d+$/.test(record.timestampNs) &&
     typeof record.transactionHash === "string" &&
     typeof record.transactionExplorerUrl === "string" &&
-    typeof record.playerExplorerUrl === "string"
+    typeof record.playerExplorerUrl === "string" &&
+    (record.score === null ||
+      (typeof record.score === "number" &&
+        Number.isInteger(record.score) &&
+        record.score >= 0))
   );
 };
 
@@ -435,12 +449,28 @@ export const parseContractActivityFeed = (
   value: unknown,
 ): ContractActivityFeed => {
   const record = asRecord(value);
+  const totals = asRecord(record?.totals);
   if (
     record === null ||
     typeof record.contractId !== "string" ||
     typeof record.updatedAt !== "string" ||
     Number.isNaN(Date.parse(record.updatedAt)) ||
     typeof record.stale !== "boolean" ||
+    totals === null ||
+    (totals.players !== null &&
+      (typeof totals.players !== "number" ||
+        !Number.isInteger(totals.players) ||
+        totals.players < 0)) ||
+    typeof totals.gamesStarted !== "number" ||
+    !Number.isInteger(totals.gamesStarted) ||
+    totals.gamesStarted < 0 ||
+    typeof totals.verifiedScores !== "number" ||
+    !Number.isInteger(totals.verifiedScores) ||
+    totals.verifiedScores < 0 ||
+    typeof totals.tournamentEntries !== "number" ||
+    !Number.isInteger(totals.tournamentEntries) ||
+    totals.tournamentEntries < 0 ||
+    typeof totals.complete !== "boolean" ||
     !Array.isArray(record.rows) ||
     !record.rows.every(isContractActivity)
   ) {

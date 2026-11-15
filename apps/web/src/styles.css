@@ -1470,6 +1470,34 @@ footer {
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
+.activity-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.activity-stats article {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(185, 255, 82, 0.035);
+}
+.activity-stats span {
+  display: block;
+  min-height: 24px;
+  color: var(--muted);
+  font: 500 8px/1.45 "DM Mono", monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.activity-stats strong {
+  display: block;
+  margin-top: 7px;
+  color: var(--acid);
+  font: 700 24px/1 "Manrope", sans-serif;
+  letter-spacing: -0.04em;
+}
 .activity-feed {
   max-height: 390px;
   overflow: auto;
@@ -1673,6 +1701,7 @@ footer {
   .live-activity { padding: 20px 16px; }
   .live-activity-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
   .live-activity-heading > span { text-align: left; }
+  .activity-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .activity-row { grid-template-columns: 9px minmax(0, 1fr); }
   .activity-proof { grid-column: 2; justify-self: start; padding-bottom: 4px; }
   .game-library-heading { align-items: flex-start; flex-direction: column; padding-top: 26px; }
