@@ -63,6 +63,8 @@ export const config = Object.freeze({
   networkId,
   rpcUrl: process.env.NEAR_RPC_URL ?? "https://test.rpc.fastnear.com",
   explorerUrl: process.env.NEAR_EXPLORER_URL ?? "https://testnet.nearblocks.io",
+  indexerUrl:
+    process.env.NEAR_INDEXER_URL ?? "https://api-testnet.nearblocks.io",
   contractId:
     process.env.NEAR_CONTRACT_ID ?? "near-arcade-contract-bf1dd35d6d.testnet",
   fastAuthClientId:

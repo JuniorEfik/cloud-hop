@@ -130,6 +130,29 @@ export interface AchievementPage {
   readonly playerExplorerUrl: string;
 }
 
+export type ContractActivityKind =
+  | "session-started"
+  | "score-recorded"
+  | "tournament-joined"
+  | "session-abandoned";
+
+export interface ContractActivity {
+  readonly id: string;
+  readonly kind: ContractActivityKind;
+  readonly playerId: string;
+  readonly timestampNs: string;
+  readonly transactionHash: string;
+  readonly transactionExplorerUrl: string;
+  readonly playerExplorerUrl: string;
+}
+
+export interface ContractActivityFeed {
+  readonly contractId: string;
+  readonly updatedAt: string;
+  readonly stale: boolean;
+  readonly rows: readonly ContractActivity[];
+}
+
 const apiBaseUrl = (
   typeof __PUBLIC_API_BASE_URL__ === "string"
     ? __PUBLIC_API_BASE_URL__
@@ -278,6 +301,26 @@ const isAchievement = (value: unknown): value is Achievement => {
   );
 };
 
+const isContractActivity = (value: unknown): value is ContractActivity => {
+  const record = asRecord(value);
+  return (
+    record !== null &&
+    typeof record.id === "string" &&
+    [
+      "session-started",
+      "score-recorded",
+      "tournament-joined",
+      "session-abandoned",
+    ].includes(String(record.kind)) &&
+    typeof record.playerId === "string" &&
+    typeof record.timestampNs === "string" &&
+    /^\d+$/.test(record.timestampNs) &&
+    typeof record.transactionHash === "string" &&
+    typeof record.transactionExplorerUrl === "string" &&
+    typeof record.playerExplorerUrl === "string"
+  );
+};
+
 export const parsePlayerStatsResponse = (
   value: unknown,
 ): PlayerStatsResponse => {
@@ -388,6 +431,24 @@ export const parseAchievementPage = (value: unknown): AchievementPage => {
   return record as unknown as AchievementPage;
 };
 
+export const parseContractActivityFeed = (
+  value: unknown,
+): ContractActivityFeed => {
+  const record = asRecord(value);
+  if (
+    record === null ||
+    typeof record.contractId !== "string" ||
+    typeof record.updatedAt !== "string" ||
+    Number.isNaN(Date.parse(record.updatedAt)) ||
+    typeof record.stale !== "boolean" ||
+    !Array.isArray(record.rows) ||
+    !record.rows.every(isContractActivity)
+  ) {
+    throw new Error("The arcade API returned invalid contract activity.");
+  }
+  return record as unknown as ContractActivityFeed;
+};
+
 const readResponse = async (response: Response): Promise<unknown> => {
   if (response.ok) return response.json();
   try {
@@ -481,6 +542,13 @@ export const loadPlayerAchievements = async (
     { headers: { accept: "application/json" } },
   );
   return parseAchievementPage(await readResponse(response));
+};
+
+export const loadContractActivity = async (): Promise<ContractActivityFeed> => {
+  const response = await fetch(`${apiBaseUrl}/api/v1/activity`, {
+    headers: { accept: "application/json" },
+  });
+  return parseContractActivityFeed(await readResponse(response));
 };
 
 export const formatChainTimestamp = (timestampNs: string): string => {

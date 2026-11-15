@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   parseAchievementPage,
+  parseContractActivityFeed,
   parseLeaderboardPage,
   parsePlayerStatsResponse,
   parseTournamentEntryResponse,
@@ -181,6 +182,32 @@ test("achievement parser accepts non-transferable badge records", () => {
     parseAchievementPage({
       ...page,
       rows: [{ ...page.rows[0], earnedAtNs: "later" }],
+    }),
+  );
+});
+
+test("contract activity parser accepts clickable NEAR transaction updates", () => {
+  const feed = {
+    contractId: "arcade.testnet",
+    updatedAt: "2026-11-15T00:00:00.000Z",
+    stale: false,
+    rows: [
+      {
+        id: "tx:session-started",
+        kind: "session-started",
+        playerId: "pilot.testnet",
+        timestampNs: "100",
+        transactionHash: "transaction-hash",
+        transactionExplorerUrl: "https://explorer/txns/transaction-hash",
+        playerExplorerUrl: "https://explorer/address/pilot.testnet",
+      },
+    ],
+  };
+  assert.deepEqual(parseContractActivityFeed(feed), feed);
+  assert.throws(() =>
+    parseContractActivityFeed({
+      ...feed,
+      rows: [{ ...feed.rows[0], timestampNs: "later" }],
     }),
   );
 });

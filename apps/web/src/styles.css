@@ -1446,6 +1446,76 @@ footer {
 .dashboard-showcase .screen-heading > p { max-width: 560px; color: #b0c8c2; }
 .dashboard-play { margin-top: 28px; text-decoration: none; }
 
+.live-activity {
+  margin-top: 16px;
+  padding: 24px;
+  border: 1px solid rgba(185, 255, 82, 0.22);
+  border-radius: 18px;
+  background: rgba(5, 18, 26, 0.88);
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(8px);
+}
+.live-activity-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 16px;
+}
+.live-activity-heading h2 { margin: 7px 0 0; font-size: 25px; letter-spacing: -0.04em; }
+.live-activity-heading > span {
+  color: var(--muted);
+  font: 500 8px "DM Mono", monospace;
+  text-align: right;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.activity-feed {
+  max-height: 390px;
+  overflow: auto;
+  border-top: 1px solid var(--line);
+}
+.activity-row {
+  min-height: 68px;
+  display: grid;
+  grid-template-columns: 9px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 4px;
+  border-bottom: 1px solid var(--line);
+}
+.activity-pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--acid);
+  box-shadow: 0 0 12px rgba(185, 255, 82, 0.75);
+}
+.activity-copy { min-width: 0; }
+.activity-copy p { margin: 0; color: var(--ink); font-size: 11px; line-height: 1.5; }
+.activity-copy p a {
+  color: var(--acid);
+  font-family: "DM Mono", monospace;
+  text-decoration: none;
+}
+.activity-copy p a:hover { text-decoration: underline; }
+.activity-copy time {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font: 500 8px "DM Mono", monospace;
+  text-transform: uppercase;
+}
+.activity-proof {
+  color: var(--acid);
+  font: 500 8px "DM Mono", monospace;
+  text-decoration: none;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.activity-proof:hover { text-decoration: underline; }
+.live-activity > .text-button { margin-top: 14px; }
+
 .featured-game-card {
   position: relative;
   min-height: 440px;
@@ -1600,6 +1670,11 @@ footer {
   .dashboard-showcase .screen-heading h1 { font-size: clamp(43px, 14vw, 60px); }
   .dashboard-play { width: 100%; min-width: 0; }
   .featured-game-card { min-height: 390px; transform: none; }
+  .live-activity { padding: 20px 16px; }
+  .live-activity-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .live-activity-heading > span { text-align: left; }
+  .activity-row { grid-template-columns: 9px minmax(0, 1fr); }
+  .activity-proof { grid-column: 2; justify-self: start; padding-bottom: 4px; }
   .game-library-heading { align-items: flex-start; flex-direction: column; padding-top: 26px; }
   .game-library-heading > span { line-height: 1.5; }
   .bottom-nav {

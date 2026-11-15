@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { config } from "./config.js";
+import { ContractActivityService } from "./activity.js";
 import { ApiError } from "./errors.js";
 import { RelayerService } from "./relayer.js";
 import { SponsorService } from "./sponsor.js";
@@ -29,6 +30,7 @@ const initialization = Promise.all([
 const chainReader = new RpcArcadeChainReader(config.rpcUrl, config.contractId);
 const replayVerifier = new ReplayVerifierService(config, chainReader);
 const publicReads = new PublicReadService(config, chainReader);
+const contractActivity = new ContractActivityService(config);
 const replayLimiter = new MinuteRateLimiter(config.verifierPerIpMinuteLimit);
 const webOutputDirectory = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -298,6 +300,11 @@ export const server = createServer(async (request, response) => {
           ? config.sponsorAccountId
           : "",
       });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/v1/activity") {
+      sendJson(response, 200, await contractActivity.getFeed());
       return;
     }
 

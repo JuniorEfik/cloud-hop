@@ -9,6 +9,7 @@ import {
 import { compactAccountId, gameSeedFromChainSeed } from "./near-utils.js";
 import {
   formatChainTimestamp,
+  loadContractActivity,
   loadCurrentTournament,
   loadLeaderboardPage,
   loadPlayerAchievements,
@@ -16,6 +17,8 @@ import {
   loadTournamentEntry,
   loadTournamentLeaderboardPage,
   type Achievement,
+  type ContractActivity,
+  type ContractActivityFeed,
   type LeaderboardPeriod,
   type LeaderboardRow,
   type PlayerStatsResponse,
@@ -373,6 +376,21 @@ root.innerHTML = `
           <span class="game-card-action" aria-hidden="true">▶</span>
         </a>
       </div>
+      <section class="live-activity" aria-labelledby="live-activity-title">
+        <header class="live-activity-heading">
+          <div>
+            <span class="detail-label">Live on NEAR</span>
+            <h2 id="live-activity-title">Contract activity</h2>
+          </div>
+          <span data-activity-status role="status" aria-live="polite">Syncing Testnet activity…</span>
+        </header>
+        <div class="activity-feed" data-activity-rows aria-live="polite">
+          <div class="compact-empty"><p>Loading confirmed contract updates…</p></div>
+        </div>
+        <button type="button" class="text-button" data-action="retry-activity" data-activity-retry hidden>
+          Retry live activity
+        </button>
+      </section>
       <div class="game-library-heading">
         <div><span class="detail-label">Available games</span><h2>The arcade floor</h2></div>
         <span>1 live / more flights incoming</span>
@@ -555,6 +573,9 @@ const menuPlayerMethod = requireElement<HTMLElement>("[data-menu-player-method]"
 const menuTournamentName = requireElement<HTMLElement>("[data-menu-tournament-name]");
 const menuTournamentCopy = requireElement<HTMLElement>("[data-menu-tournament-copy]");
 const menuTournamentStatus = requireElement<HTMLElement>("[data-menu-tournament-status]");
+const activityRowsElement = requireElement<HTMLElement>("[data-activity-rows]");
+const activityStatus = requireElement<HTMLElement>("[data-activity-status]");
+const activityRetry = requireElement<HTMLButtonElement>("[data-activity-retry]");
 const profileName = requireElement<HTMLElement>("[data-profile-name]");
 const profileMethod = requireElement<HTMLElement>("[data-profile-method]");
 const profileCopy = requireElement<HTMLElement>("[data-profile-copy]");
@@ -621,6 +642,9 @@ let bootBusy = false;
 let serviceRecoveryBusy = false;
 let serviceRecoveryAttempt = 0;
 let serviceRecoveryTimer: number | null = null;
+let activityBusy = false;
+let activityRequestId = 0;
+let activityTimer: number | null = null;
 let registrationProof: {
   readonly accountId: string;
   readonly tournamentId: string;
@@ -630,6 +654,99 @@ let registrationProof: {
 const setStatus = (message: string, tone: "neutral" | "success" | "error" = "neutral"): void => {
   statusElement.textContent = message;
   statusElement.dataset.tone = tone;
+};
+
+const activityDescriptions: Record<ContractActivity["kind"], string> = {
+  "session-started": "started a Cloud Hop game",
+  "score-recorded": "recorded a verified score",
+  "tournament-joined": "joined the active tournament",
+  "session-abandoned": "closed an unfinished game session",
+};
+
+const renderContractActivity = (feed: ContractActivityFeed): void => {
+  activityRowsElement.replaceChildren();
+  activityRetry.hidden = true;
+  activityStatus.textContent = feed.stale
+    ? "Showing the latest cached Testnet updates"
+    : `Updated ${new Intl.DateTimeFormat(undefined, {
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(new Date(feed.updatedAt))}`;
+
+  if (feed.rows.length === 0) {
+    activityRowsElement.innerHTML =
+      '<div class="compact-empty"><p>No player contract activity has landed yet.</p></div>';
+    return;
+  }
+
+  for (const activity of feed.rows) {
+    const row = document.createElement("article");
+    row.className = "activity-row";
+
+    const pulse = document.createElement("span");
+    pulse.className = "activity-pulse";
+    pulse.setAttribute("aria-hidden", "true");
+
+    const content = document.createElement("div");
+    content.className = "activity-copy";
+    const sentence = document.createElement("p");
+    const player = document.createElement("a");
+    player.href = activity.playerExplorerUrl;
+    player.target = "_blank";
+    player.rel = "noreferrer";
+    player.title = activity.playerId;
+    player.textContent = compactAccountId(activity.playerId);
+    sentence.append(player, ` ${activityDescriptions[activity.kind]}.`);
+
+    const time = document.createElement("time");
+    time.textContent = formatChainTimestamp(activity.timestampNs);
+    content.append(sentence, time);
+
+    const proof = document.createElement("a");
+    proof.className = "activity-proof";
+    proof.href = activity.transactionExplorerUrl;
+    proof.target = "_blank";
+    proof.rel = "noreferrer";
+    proof.textContent = "View transaction ↗";
+    proof.setAttribute(
+      "aria-label",
+      `View ${activityDescriptions[activity.kind]} transaction for ${activity.playerId}`,
+    );
+
+    row.append(pulse, content, proof);
+    activityRowsElement.append(row);
+  }
+};
+
+const refreshContractActivity = async (quiet = false): Promise<void> => {
+  if (activityBusy) return;
+  activityBusy = true;
+  const requestId = activityRequestId + 1;
+  activityRequestId = requestId;
+  if (!quiet) activityStatus.textContent = "Syncing Testnet activity…";
+  try {
+    const feed = await loadContractActivity();
+    if (requestId !== activityRequestId) return;
+    renderContractActivity(feed);
+  } catch {
+    if (requestId !== activityRequestId) return;
+    activityStatus.textContent = "Live activity is temporarily unavailable";
+    activityRetry.hidden = false;
+    if (activityRowsElement.querySelector(".activity-row") === null) {
+      activityRowsElement.innerHTML =
+        '<div class="compact-empty"><p>Confirmed contract updates could not be loaded.</p></div>';
+    }
+  } finally {
+    if (requestId === activityRequestId) activityBusy = false;
+  }
+};
+
+const startActivityPolling = (): void => {
+  void refreshContractActivity();
+  if (activityTimer !== null) return;
+  activityTimer = window.setInterval(() => {
+    void refreshContractActivity(true);
+  }, 30_000);
 };
 
 const renderPlayerStats = (response: PlayerStatsResponse | null): void => {
@@ -1115,6 +1232,7 @@ new CloudHopGame(gameRoot, {
         : null;
     const result = await client.createSession(tournamentId);
     setStatus("Run ready. Get set for the countdown.", "success");
+    void refreshContractActivity(true);
     return {
       gameSeed: gameSeedFromChainSeed(result.session.seed),
       sessionId: result.session.sessionId,
@@ -1136,6 +1254,7 @@ new CloudHopGame(gameRoot, {
     void refreshAchievements(client.identity);
     void refreshTournament(client.identity);
     void loadLeaderboard(true);
+    void refreshContractActivity(true);
     return {
       score: result.record.score,
       transactionUrl: result.explorerUrl,
@@ -1184,6 +1303,7 @@ root.addEventListener("click", (event) => {
   if (action === "retry-achievements") {
     void refreshAchievements(nearClient?.identity ?? null);
   }
+  if (action === "retry-activity") void refreshContractActivity();
   if (action === "retry-boot") void runBoot();
   if (action === "continue-guest") continueAsGuest();
   if (
@@ -1206,6 +1326,7 @@ root.addEventListener("click", (event) => {
           explorerUrl: result.explorerUrl,
         };
         setStatus("Tournament registration confirmed on NEAR Testnet.", "success");
+        void refreshContractActivity(true);
         return refreshTournament(nearClient?.identity ?? null);
       })
       .catch((error: unknown) => setStatus(describeNearError(error), "error"))
@@ -1386,6 +1507,7 @@ const finishBoot = (): void => {
   appFrame.hidden = false;
   document.body.classList.add("app-ready");
   router.refresh("initial");
+  startActivityPolling();
 };
 
 const setBootBusy = (busy: boolean): void => {
