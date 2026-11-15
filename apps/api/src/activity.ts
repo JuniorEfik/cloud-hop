@@ -45,6 +45,8 @@ interface ActivityServiceOptions {
   readonly now?: () => number;
   readonly cacheTtlMs?: number;
   readonly totalsCacheTtlMs?: number;
+  readonly failureBackoffBaseMs?: number;
+  readonly failureBackoffMaxMs?: number;
   readonly reader?: ContractViewReader;
 }
 
@@ -64,6 +66,8 @@ const METHOD_KINDS = new Map<string, ContractActivityKind>([
 ]);
 const DEFAULT_CACHE_TTL_MS = 10_000;
 const DEFAULT_TOTALS_CACHE_TTL_MS = 60_000;
+const DEFAULT_FAILURE_BACKOFF_BASE_MS = 5_000;
+const DEFAULT_FAILURE_BACKOFF_MAX_MS = 60_000;
 const MAX_ACTIVITY_ROWS = 12;
 const MAX_TOTAL_PAGES = 40;
 
@@ -217,6 +221,8 @@ export class ContractActivityService {
   readonly #now: () => number;
   readonly #cacheTtlMs: number;
   readonly #totalsCacheTtlMs: number;
+  readonly #failureBackoffBaseMs: number;
+  readonly #failureBackoffMaxMs: number;
   readonly #reader: ContractViewReader | undefined;
   #cache: { readonly expiresAt: number; readonly feed: ContractActivityFeed } | null =
     null;
@@ -224,6 +230,9 @@ export class ContractActivityService {
     readonly expiresAt: number;
     readonly totals: ContractActivityTotals;
   } | null = null;
+  #refreshInFlight: Promise<ContractActivityFeed> | null = null;
+  #retryAt = 0;
+  #consecutiveFailures = 0;
 
   constructor(config: ApiConfig, options: ActivityServiceOptions = {}) {
     this.#config = config;
@@ -232,6 +241,16 @@ export class ContractActivityService {
     this.#cacheTtlMs = options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
     this.#totalsCacheTtlMs =
       options.totalsCacheTtlMs ?? DEFAULT_TOTALS_CACHE_TTL_MS;
+    this.#failureBackoffBaseMs =
+      options.failureBackoffBaseMs ?? DEFAULT_FAILURE_BACKOFF_BASE_MS;
+    this.#failureBackoffMaxMs =
+      options.failureBackoffMaxMs ?? DEFAULT_FAILURE_BACKOFF_MAX_MS;
+    if (
+      this.#failureBackoffBaseMs < 0 ||
+      this.#failureBackoffMaxMs < this.#failureBackoffBaseMs
+    ) {
+      throw new Error("Activity failure backoff configuration is invalid.");
+    }
     this.#reader = options.reader;
   }
 
@@ -356,34 +375,76 @@ export class ContractActivityService {
     return totals;
   }
 
+  async #refreshFeed(): Promise<ContractActivityFeed> {
+    const page = await this.#fetchPage();
+    const totals = await this.#getTotals(page);
+    const rows = await this.#enrichScores(
+      parseTransactions(page.txns, this.#config.explorerUrl),
+    );
+    const refreshedAt = this.#now();
+    const feed: ContractActivityFeed = {
+      contractId: this.#config.contractId,
+      updatedAt: new Date(refreshedAt).toISOString(),
+      stale: false,
+      totals,
+      rows,
+    };
+    this.#cache = { expiresAt: refreshedAt + this.#cacheTtlMs, feed };
+    return feed;
+  }
+
+  #startRefresh(): Promise<ContractActivityFeed> {
+    if (this.#refreshInFlight !== null) return this.#refreshInFlight;
+
+    const refresh = this.#refreshFeed()
+      .then((feed) => {
+        this.#consecutiveFailures = 0;
+        this.#retryAt = 0;
+        return feed;
+      })
+      .catch((error: unknown) => {
+        this.#consecutiveFailures += 1;
+        const exponent = Math.min(this.#consecutiveFailures - 1, 10);
+        const delay = Math.min(
+          this.#failureBackoffMaxMs,
+          this.#failureBackoffBaseMs * 2 ** exponent,
+        );
+        this.#retryAt = this.#now() + delay;
+        throw error;
+      })
+      .finally(() => {
+        if (this.#refreshInFlight === refresh) this.#refreshInFlight = null;
+      });
+    this.#refreshInFlight = refresh;
+    return refresh;
+  }
+
+  #unavailable(): ApiError {
+    return new ApiError(
+      503,
+      "ACTIVITY_UNAVAILABLE",
+      "Live contract activity is temporarily unavailable.",
+    );
+  }
+
   async getFeed(): Promise<ContractActivityFeed> {
     const now = this.#now();
     if (this.#cache !== null && this.#cache.expiresAt > now) {
       return this.#cache.feed;
     }
 
+    if (this.#cache !== null) {
+      if (now >= this.#retryAt && this.#refreshInFlight === null) {
+        void this.#startRefresh().catch(() => undefined);
+      }
+      return { ...this.#cache.feed, stale: true };
+    }
+
+    if (now < this.#retryAt) throw this.#unavailable();
     try {
-      const page = await this.#fetchPage();
-      const totals = await this.#getTotals(page);
-      const rows = await this.#enrichScores(
-        parseTransactions(page.txns, this.#config.explorerUrl),
-      );
-      const feed: ContractActivityFeed = {
-        contractId: this.#config.contractId,
-        updatedAt: new Date(now).toISOString(),
-        stale: false,
-        totals,
-        rows,
-      };
-      this.#cache = { expiresAt: now + this.#cacheTtlMs, feed };
-      return feed;
+      return await this.#startRefresh();
     } catch {
-      if (this.#cache !== null) return { ...this.#cache.feed, stale: true };
-      throw new ApiError(
-        503,
-        "ACTIVITY_UNAVAILABLE",
-        "Live contract activity is temporarily unavailable.",
-      );
+      throw this.#unavailable();
     }
   }
 }
