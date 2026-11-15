@@ -617,6 +617,8 @@ const renderRoute = ({ route, kind }: RouteChange): void => {
       : `${APP_ROUTES[route].title} · NEAR Arcade`;
   if (!appReady) return;
 
+  refreshVisibleData();
+
   routeAnnouncer.textContent = "";
   queueMicrotask(() => {
     routeAnnouncer.textContent = `${APP_ROUTES[route].label} screen opened.`;
@@ -639,22 +641,34 @@ let authAttempt = 0;
 let activeAuthMethod: "wallet" | "google" | null = null;
 let leaderboardBusy = false;
 let leaderboardRequestId = 0;
+let leaderboardRefreshQueued = false;
 let leaderboardPeriod: LeaderboardPeriod = "all";
 let leaderboardRows: LeaderboardRow[] = [];
 let leaderboardNextCursor: number | null = null;
+let playerStatsBusyFor: string | null = null;
+let playerStatsRequestId = 0;
+let playerStatsRefreshQueued = false;
 let currentTournament: Tournament | null = null;
 let currentTournamentEntry: TournamentEntry | null = null;
 let tournamentRows: LeaderboardRow[] = [];
 let tournamentBusy = false;
+let tournamentRefreshBusyFor: string | null | undefined;
+let tournamentRequestId = 0;
+let tournamentRefreshQueued = false;
 let achievements: Achievement[] = [];
+let achievementsBusyFor: string | null = null;
+let achievementsRequestId = 0;
+let achievementsRefreshQueued = false;
 let sponsorConfigured = false;
 let bootBusy = false;
 let serviceRecoveryBusy = false;
 let serviceRecoveryAttempt = 0;
 let serviceRecoveryTimer: number | null = null;
 let activityBusy = false;
+let activityHasLoaded = false;
 let activityRequestId = 0;
-let activityTimer: number | null = null;
+let activityRefreshQueued = false;
+let liveRefreshTimer: number | null = null;
 let registrationProof: {
   readonly accountId: string;
   readonly tournamentId: string;
@@ -693,6 +707,7 @@ const renderActivityTotal = (
 };
 
 const renderContractActivity = (feed: ContractActivityFeed): void => {
+  activityHasLoaded = true;
   activityRowsElement.replaceChildren();
   activityRetry.hidden = true;
   activityStatus.textContent = feed.stale
@@ -764,8 +779,15 @@ const renderContractActivity = (feed: ContractActivityFeed): void => {
   }
 };
 
-const refreshContractActivity = async (quiet = false): Promise<void> => {
-  if (activityBusy) return;
+const refreshContractActivity = async (
+  quiet = false,
+  queueIfBusy = false,
+): Promise<void> => {
+  if (activityBusy) {
+    if (queueIfBusy) activityRefreshQueued = true;
+    return;
+  }
+  activityRefreshQueued = false;
   activityBusy = true;
   const requestId = activityRequestId + 1;
   activityRequestId = requestId;
@@ -775,7 +797,7 @@ const refreshContractActivity = async (quiet = false): Promise<void> => {
     if (requestId !== activityRequestId) return;
     renderContractActivity(feed);
   } catch {
-    if (requestId !== activityRequestId) return;
+    if (requestId !== activityRequestId || (quiet && activityHasLoaded)) return;
     activityStatus.textContent = "Live activity is temporarily unavailable";
     activityRetry.hidden = false;
     if (activityRowsElement.querySelector(".activity-row") === null) {
@@ -783,16 +805,13 @@ const refreshContractActivity = async (quiet = false): Promise<void> => {
         '<div class="compact-empty"><p>Confirmed contract updates could not be loaded.</p></div>';
     }
   } finally {
-    if (requestId === activityRequestId) activityBusy = false;
+    if (requestId === activityRequestId) {
+      const rerun = activityRefreshQueued;
+      activityRefreshQueued = false;
+      activityBusy = false;
+      if (rerun) void refreshContractActivity(true);
+    }
   }
-};
-
-const startActivityPolling = (): void => {
-  void refreshContractActivity();
-  if (activityTimer !== null) return;
-  activityTimer = window.setInterval(() => {
-    void refreshContractActivity(true);
-  }, 30_000);
 };
 
 const renderPlayerStats = (response: PlayerStatsResponse | null): void => {
@@ -822,25 +841,59 @@ const renderPlayerStats = (response: PlayerStatsResponse | null): void => {
 
 const refreshPlayerStats = async (
   identity: ConnectedIdentity | null,
+  quiet = false,
+  queueIfBusy = false,
 ): Promise<void> => {
   if (identity === null) {
+    playerStatsRequestId += 1;
+    playerStatsBusyFor = null;
+    playerStatsRefreshQueued = false;
     renderPlayerStats(null);
     return;
   }
+  if (playerStatsBusyFor === identity.accountId) {
+    if (queueIfBusy) playerStatsRefreshQueued = true;
+    return;
+  }
+  playerStatsRefreshQueued = false;
+  const requestId = ++playerStatsRequestId;
+  playerStatsBusyFor = identity.accountId;
   playerStats.setAttribute("aria-busy", "true");
-  playerStats.setAttribute("aria-label", "Loading player statistics");
-  playerBest.textContent = "…";
-  playerRuns.textContent = "…";
-  playerLatest.textContent = "…";
+  if (!quiet) {
+    playerStats.setAttribute("aria-label", "Loading player statistics");
+    playerBest.textContent = "…";
+    playerRuns.textContent = "…";
+    playerLatest.textContent = "…";
+  }
   try {
-    renderPlayerStats(await loadPlayerStats(identity.accountId));
+    const response = await loadPlayerStats(identity.accountId);
+    if (
+      requestId !== playerStatsRequestId ||
+      nearClient?.identity?.accountId !== identity.accountId
+    ) {
+      return;
+    }
+    renderPlayerStats(response);
   } catch {
+    if (requestId !== playerStatsRequestId || quiet) return;
     playerBest.textContent = "?";
     playerRuns.textContent = "?";
     playerLatest.textContent = "?";
     bestBlockLink.hidden = true;
-    playerStats.setAttribute("aria-busy", "false");
     playerStats.setAttribute("aria-label", "Player statistics are unavailable.");
+  } finally {
+    if (requestId === playerStatsRequestId) {
+      const rerun = playerStatsRefreshQueued;
+      playerStatsRefreshQueued = false;
+      playerStatsBusyFor = null;
+      playerStats.setAttribute("aria-busy", "false");
+      if (
+        rerun &&
+        nearClient?.identity?.accountId === identity.accountId
+      ) {
+        void refreshPlayerStats(identity, true);
+      }
+    }
   }
 };
 
@@ -1015,56 +1068,101 @@ const renderTournament = (): void => {
 
 const refreshAchievements = async (
   identity: ConnectedIdentity | null,
+  quiet = false,
+  queueIfBusy = false,
 ): Promise<void> => {
   if (identity === null) {
+    achievementsRequestId += 1;
+    achievementsBusyFor = null;
+    achievementsRefreshQueued = false;
     achievements = [];
     renderAchievements();
     return;
   }
-  achievementCount.textContent = "Loading…";
+  if (achievementsBusyFor === identity.accountId) {
+    if (queueIfBusy) achievementsRefreshQueued = true;
+    return;
+  }
+  achievementsRefreshQueued = false;
+  const requestId = ++achievementsRequestId;
+  achievementsBusyFor = identity.accountId;
+  if (!quiet) achievementCount.textContent = "Loading…";
   try {
     const page = await loadPlayerAchievements(identity.accountId);
-    if (nearClient?.identity?.accountId !== identity.accountId) return;
+    if (
+      requestId !== achievementsRequestId ||
+      nearClient?.identity?.accountId !== identity.accountId
+    ) {
+      return;
+    }
     achievements = [...page.rows];
     renderAchievements();
   } catch {
+    if (requestId !== achievementsRequestId || quiet) return;
     achievements = [];
     achievementCount.textContent = "Unavailable";
     achievementRowsElement.innerHTML =
       '<div class="compact-empty"><p>Achievements could not be read from Testnet.</p><button type="button" class="text-button" data-action="retry-achievements">Retry badges</button></div>';
+  } finally {
+    if (requestId === achievementsRequestId) {
+      const rerun = achievementsRefreshQueued;
+      achievementsRefreshQueued = false;
+      achievementsBusyFor = null;
+      if (
+        rerun &&
+        nearClient?.identity?.accountId === identity.accountId
+      ) {
+        void refreshAchievements(identity, true);
+      }
+    }
   }
 };
 
 const refreshTournament = async (
   identity: ConnectedIdentity | null = nearClient?.identity ?? null,
+  quiet = false,
+  queueIfBusy = false,
 ): Promise<void> => {
+  const accountId = identity?.accountId ?? null;
+  if (tournamentRefreshBusyFor === accountId) {
+    if (queueIfBusy) tournamentRefreshQueued = true;
+    return;
+  }
+  tournamentRefreshQueued = false;
+  const requestId = ++tournamentRequestId;
+  tournamentRefreshBusyFor = accountId;
   tournamentSection.setAttribute("aria-busy", "true");
-  tournamentRetry.hidden = true;
-  tournamentRankingStatus.textContent = "Reading Testnet…";
+  if (!quiet) {
+    tournamentRetry.hidden = true;
+    tournamentRankingStatus.textContent = "Reading Testnet…";
+  }
   try {
     const response = await loadCurrentTournament();
-    currentTournament = response.tournament;
-    tournamentContract.href = response.contractExplorerUrl;
-    currentTournamentEntry = null;
-    tournamentRows = [];
-    if (currentTournament !== null) {
+    let nextEntry: TournamentEntry | null = null;
+    let nextRows: LeaderboardRow[] = [];
+    if (response.tournament !== null) {
       const [ranking, entry] = await Promise.all([
-        loadTournamentLeaderboardPage(currentTournament.tournamentId, 0, 10),
+        loadTournamentLeaderboardPage(response.tournament.tournamentId, 0, 10),
         identity === null
           ? Promise.resolve(null)
-          : loadTournamentEntry(currentTournament.tournamentId, identity.accountId),
+          : loadTournamentEntry(response.tournament.tournamentId, identity.accountId),
       ]);
-      if (
-        identity !== null &&
-        nearClient?.identity?.accountId !== identity.accountId
-      ) {
-        return;
-      }
-      tournamentRows = [...ranking.rows];
-      currentTournamentEntry = entry?.entry ?? null;
+      nextRows = [...ranking.rows];
+      nextEntry = entry?.entry ?? null;
     }
+    if (
+      requestId !== tournamentRequestId ||
+      (identity !== null && nearClient?.identity?.accountId !== identity.accountId)
+    ) {
+      return;
+    }
+    currentTournament = response.tournament;
+    tournamentContract.href = response.contractExplorerUrl;
+    currentTournamentEntry = nextEntry;
+    tournamentRows = nextRows;
     renderTournament();
   } catch {
+    if (requestId !== tournamentRequestId || quiet) return;
     currentTournament = null;
     currentTournamentEntry = null;
     tournamentRows = [];
@@ -1078,7 +1176,18 @@ const refreshTournament = async (
     menuTournamentCopy.textContent = "Open the tournament screen to retry the Testnet read.";
     tournamentRetry.hidden = false;
   } finally {
-    tournamentSection.setAttribute("aria-busy", "false");
+    if (requestId === tournamentRequestId) {
+      const rerun = tournamentRefreshQueued;
+      tournamentRefreshQueued = false;
+      tournamentRefreshBusyFor = undefined;
+      tournamentSection.setAttribute("aria-busy", "false");
+      if (
+        rerun &&
+        (nearClient?.identity?.accountId ?? null) === accountId
+      ) {
+        void refreshTournament(identity, true);
+      }
+    }
   }
 };
 
@@ -1135,30 +1244,71 @@ const renderLeaderboardRows = (): void => {
   }
 };
 
-const loadLeaderboard = async (reset: boolean): Promise<void> => {
-  if (leaderboardBusy && !reset) return;
+const loadLeaderboard = async (
+  reset: boolean,
+  options: {
+    readonly quiet?: boolean;
+    readonly preserveRows?: boolean;
+    readonly queueIfBusy?: boolean;
+  } = {},
+): Promise<void> => {
+  const quiet = options.quiet ?? false;
+  const preserveRows = reset && (options.preserveRows ?? false);
+  if (leaderboardBusy && (quiet || !reset)) {
+    if (options.queueIfBusy) leaderboardRefreshQueued = true;
+    return;
+  }
+  leaderboardRefreshQueued = false;
   const requestedPeriod = leaderboardPeriod;
   const cursor = reset ? 0 : leaderboardNextCursor;
   if (!reset && cursor === null) return;
+  const targetRowCount = preserveRows
+    ? Math.max(10, leaderboardRows.length)
+    : 10;
   const requestId = ++leaderboardRequestId;
   leaderboardBusy = true;
   leaderboardTable.setAttribute("aria-busy", "true");
   leaderboardMore.disabled = true;
-  leaderboardRetry.hidden = true;
-  if (reset) {
+  if (!quiet) leaderboardRetry.hidden = true;
+  if (reset && !quiet) {
     leaderboardStatus.textContent = "Loading on-chain rankings…";
     leaderboardRows = [];
     renderLeaderboardRows();
   }
   try {
-    const page = await loadLeaderboardPage(requestedPeriod, cursor ?? 0, 10);
+    let page = await loadLeaderboardPage(
+      requestedPeriod,
+      cursor ?? 0,
+      Math.min(25, targetRowCount),
+    );
     if (
       requestId !== leaderboardRequestId ||
       requestedPeriod !== leaderboardPeriod
     ) {
       return;
     }
-    leaderboardRows = reset ? [...page.rows] : [...leaderboardRows, ...page.rows];
+    const refreshedRows = [...page.rows];
+    while (
+      preserveRows &&
+      refreshedRows.length < targetRowCount &&
+      page.nextCursor !== null
+    ) {
+      page = await loadLeaderboardPage(
+        requestedPeriod,
+        page.nextCursor,
+        Math.min(25, targetRowCount - refreshedRows.length),
+      );
+      if (
+        requestId !== leaderboardRequestId ||
+        requestedPeriod !== leaderboardPeriod
+      ) {
+        return;
+      }
+      refreshedRows.push(...page.rows);
+    }
+    leaderboardRows = reset
+      ? refreshedRows
+      : [...leaderboardRows, ...refreshedRows];
     leaderboardNextCursor = page.nextCursor;
     renderLeaderboardRows();
     leaderboardMore.hidden = page.nextCursor === null;
@@ -1167,7 +1317,7 @@ const loadLeaderboard = async (reset: boolean): Promise<void> => {
       page.total === 1 ? "" : "s"
     } · ${page.period === "daily" ? "current UTC day" : "all time"} · on-chain source`;
   } catch (error) {
-    if (requestId !== leaderboardRequestId) return;
+    if (requestId !== leaderboardRequestId || quiet) return;
     if (reset) leaderboardRows = [];
     renderLeaderboardRows();
     leaderboardMore.hidden = true;
@@ -1175,11 +1325,64 @@ const loadLeaderboard = async (reset: boolean): Promise<void> => {
     leaderboardStatus.textContent = `Rankings unavailable: ${describeNearError(error)}`;
   } finally {
     if (requestId === leaderboardRequestId) {
+      const rerun = leaderboardRefreshQueued;
+      leaderboardRefreshQueued = false;
       leaderboardBusy = false;
       leaderboardTable.setAttribute("aria-busy", "false");
       leaderboardMore.disabled = false;
+      if (rerun) void refreshLeaderboard();
     }
   }
+};
+
+const refreshLeaderboard = (queueIfBusy = false): Promise<void> =>
+  loadLeaderboard(true, {
+    quiet: true,
+    preserveRows: true,
+    queueIfBusy,
+  });
+
+const LIVE_REFRESH_INTERVAL_MS = 15_000;
+
+const refreshVisibleData = (): void => {
+  if (!appReady || document.hidden) return;
+  const identity = nearClient?.identity ?? null;
+  switch (router.route) {
+    case "/":
+      void refreshTournament(identity, true);
+      break;
+    case "/dashboard":
+      void refreshContractActivity(activityHasLoaded);
+      break;
+    case "/leaderboard":
+      void refreshLeaderboard();
+      break;
+    case "/tournaments":
+      void refreshTournament(identity, true);
+      void refreshAchievements(identity, true);
+      break;
+    case "/play":
+      void refreshPlayerStats(identity, true);
+      break;
+    case "/profile":
+      void refreshPlayerStats(identity, true);
+      void refreshAchievements(identity, true);
+      break;
+  }
+};
+
+const startLiveRefreshPolling = (): void => {
+  if (document.hidden || liveRefreshTimer !== null) return;
+  liveRefreshTimer = window.setInterval(
+    refreshVisibleData,
+    LIVE_REFRESH_INTERVAL_MS,
+  );
+};
+
+const stopLiveRefreshPolling = (): void => {
+  if (liveRefreshTimer === null) return;
+  window.clearInterval(liveRefreshTimer);
+  liveRefreshTimer = null;
 };
 
 const renderIdentity = (identity: ConnectedIdentity | null): void => {
@@ -1278,7 +1481,7 @@ new CloudHopGame(gameRoot, {
         : null;
     const result = await client.createSession(tournamentId);
     setStatus("Run ready. Get set for the countdown.", "success");
-    void refreshContractActivity(true);
+    void refreshContractActivity(true, true);
     return {
       gameSeed: gameSeedFromChainSeed(result.session.seed),
       sessionId: result.session.sessionId,
@@ -1296,11 +1499,11 @@ new CloudHopGame(gameRoot, {
       `Score ${result.record.score} saved.`,
       "success",
     );
-    void refreshPlayerStats(client.identity);
-    void refreshAchievements(client.identity);
-    void refreshTournament(client.identity);
-    void loadLeaderboard(true);
-    void refreshContractActivity(true);
+    void refreshPlayerStats(client.identity, false, true);
+    void refreshAchievements(client.identity, false, true);
+    void refreshTournament(client.identity, false, true);
+    void refreshLeaderboard(true);
+    void refreshContractActivity(true, true);
     return {
       score: result.record.score,
       transactionUrl: result.explorerUrl,
@@ -1372,8 +1575,8 @@ root.addEventListener("click", (event) => {
           explorerUrl: result.explorerUrl,
         };
         setStatus("Tournament registration confirmed on NEAR Testnet.", "success");
-        void refreshContractActivity(true);
-        return refreshTournament(nearClient?.identity ?? null);
+        void refreshContractActivity(true, true);
+        return refreshTournament(nearClient?.identity ?? null, false, true);
       })
       .catch((error: unknown) => setStatus(describeNearError(error), "error"))
       .finally(() => {
@@ -1553,7 +1756,7 @@ const finishBoot = (): void => {
   appFrame.hidden = false;
   document.body.classList.add("app-ready");
   router.refresh("initial");
-  startActivityPolling();
+  startLiveRefreshPolling();
 };
 
 const setBootBusy = (busy: boolean): void => {
@@ -1634,5 +1837,16 @@ window.addEventListener("online", () => {
   serviceRecoveryAttempt = 0;
   void recoverServices();
 });
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    stopLiveRefreshPolling();
+    return;
+  }
+  refreshVisibleData();
+  startLiveRefreshPolling();
+});
+
+window.addEventListener("focus", refreshVisibleData);
 
 void runBoot();
