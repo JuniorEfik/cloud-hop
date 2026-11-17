@@ -1493,10 +1493,24 @@ footer {
 }
 .activity-stats strong {
   display: block;
+  min-height: 24px;
   margin-top: 7px;
   color: var(--acid);
   font: 700 24px/1 "Manrope", sans-serif;
   letter-spacing: -0.04em;
+}
+.activity-stat-spinner {
+  display: block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(185, 255, 82, 0.22);
+  border-top-color: var(--acid);
+  border-radius: 50%;
+  box-shadow: 0 0 14px rgba(185, 255, 82, 0.14);
+  animation: activity-stat-spin 0.8s linear infinite;
+}
+@keyframes activity-stat-spin {
+  to { transform: rotate(360deg); }
 }
 .activity-feed {
   max-height: 390px;
@@ -1829,4 +1843,5 @@ body.game-immersive .game-frame {
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
+  .activity-stat-spinner { border-color: rgba(185, 255, 82, 0.38); }
 }

@@ -700,10 +700,18 @@ const renderActivityTotal = (
   value: number | null,
   complete = true,
 ): void => {
+  element.removeAttribute("aria-label");
   element.textContent =
     value === null
       ? "—"
       : value.toLocaleString() + (complete ? "" : "+");
+};
+
+const renderUnavailableActivityTotals = (): void => {
+  renderActivityTotal(activityPlayers, null);
+  renderActivityTotal(activityGames, null);
+  renderActivityTotal(activityScores, null);
+  renderActivityTotal(activityEntries, null);
 };
 
 const renderContractActivity = (feed: ContractActivityFeed): void => {
@@ -800,6 +808,7 @@ const refreshContractActivity = async (
     if (requestId !== activityRequestId || (quiet && activityHasLoaded)) return;
     activityStatus.textContent = "Live activity is temporarily unavailable";
     activityRetry.hidden = false;
+    renderUnavailableActivityTotals();
     if (activityRowsElement.querySelector(".activity-row") === null) {
       activityRowsElement.innerHTML =
         '<div class="compact-empty"><p>Confirmed contract updates could not be loaded.</p></div>';
