@@ -4,12 +4,13 @@
 |------|---------|--------------------------------|------|--------|
 | F0 | Initial dashboard markup renders spinner placeholders | `npm run build -w @near-arcade/web` | MUST | ✅ |
 | F1 | Spinner styling, accessible label, and reduced-motion behavior | `npm run typecheck -w @near-arcade/web` | MUST | ✅ |
-| F2 | Loaded totals and refresh/error behavior remain regression-covered | `npm test -w @near-arcade/web` | MUST | ⬜ |
+| F2 | Loaded totals and refresh/error behavior remain regression-covered | `npm test -w @near-arcade/web` | MUST | ✅ |
 
 ## Run record
 
 - F0 — `npm run build -w @near-arcade/web` exited 0; `apps/web/dist` was produced. Fix attempts: 0.
 - F1 — `npm run typecheck -w @near-arcade/web` exited 0; the earlier F0 build check also exited 0. Fix attempts: 0.
+- F2 — `npm test -w @near-arcade/web` exited 0 with 24 passing tests; the F0 build and F1 typecheck checks had also exited 0. Fix attempts: 0.
 
 ## Deferred
 
