@@ -385,10 +385,10 @@ root.innerHTML = `
           <span data-activity-status role="status" aria-live="polite">Syncing Testnet activity…</span>
         </header>
         <div class="activity-stats" aria-label="Cloud Hop contract totals">
-          <article><span>Verified players</span><strong data-activity-stat="players">—</strong></article>
-          <article><span>Games started</span><strong data-activity-stat="games">—</strong></article>
-          <article><span>Verified scores</span><strong data-activity-stat="scores">—</strong></article>
-          <article><span>Tournament entries</span><strong data-activity-stat="entries">—</strong></article>
+          <article><span>Verified players</span><strong data-activity-stat="players" aria-label="Loading"><i class="activity-stat-spinner" aria-hidden="true"></i></strong></article>
+          <article><span>Games started</span><strong data-activity-stat="games" aria-label="Loading"><i class="activity-stat-spinner" aria-hidden="true"></i></strong></article>
+          <article><span>Verified scores</span><strong data-activity-stat="scores" aria-label="Loading"><i class="activity-stat-spinner" aria-hidden="true"></i></strong></article>
+          <article><span>Tournament entries</span><strong data-activity-stat="entries" aria-label="Loading"><i class="activity-stat-spinner" aria-hidden="true"></i></strong></article>
         </div>
         <div class="activity-feed" data-activity-rows aria-live="polite">
           <div class="compact-empty"><p>Loading confirmed contract updates…</p></div>
