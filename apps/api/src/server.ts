@@ -32,6 +32,12 @@ const replayVerifier = new ReplayVerifierService(config, chainReader);
 const publicReads = new PublicReadService(config, chainReader);
 const contractActivity = new ContractActivityService(config, {
   reader: chainReader,
+  ...(config.activityTotalsBaseline === null
+    ? {}
+    : {
+        fixedTotals: config.activityTotalsBaseline,
+        indexerMaxAttempts: 2,
+      }),
 });
 const replayLimiter = new MinuteRateLimiter(config.verifierPerIpMinuteLimit);
 const webOutputDirectory = path.resolve(

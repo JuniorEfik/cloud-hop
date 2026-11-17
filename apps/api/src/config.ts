@@ -22,6 +22,32 @@ const integer = (name: string, fallback: number, minimum: number, maximum: numbe
   return value;
 };
 
+const activityTotalsBaseline =
+  process.env.NEAR_ACTIVITY_FIXED_TOTALS === "true"
+    ? Object.freeze({
+        players: integer("NEAR_ACTIVITY_BASELINE_PLAYERS", 0, 0, 1_000_000),
+        gamesStarted: integer(
+          "NEAR_ACTIVITY_BASELINE_GAMES_STARTED",
+          0,
+          0,
+          1_000_000_000,
+        ),
+        verifiedScores: integer(
+          "NEAR_ACTIVITY_BASELINE_VERIFIED_SCORES",
+          0,
+          0,
+          1_000_000_000,
+        ),
+        tournamentEntries: integer(
+          "NEAR_ACTIVITY_BASELINE_TOURNAMENT_ENTRIES",
+          0,
+          0,
+          1_000_000_000,
+        ),
+        complete: false,
+      })
+    : null;
+
 const networkId = process.env.NEAR_NETWORK_ID ?? "testnet";
 if (networkId !== "testnet") {
   throw new Error("The onboarding sponsor is intentionally restricted to NEAR Testnet.");
@@ -65,6 +91,7 @@ export const config = Object.freeze({
   explorerUrl: process.env.NEAR_EXPLORER_URL ?? "https://testnet.nearblocks.io",
   indexerUrl:
     process.env.NEAR_INDEXER_URL ?? "https://api-testnet.nearblocks.io",
+  activityTotalsBaseline,
   contractId:
     process.env.NEAR_CONTRACT_ID ?? "near-arcade-contract-bf1dd35d6d.testnet",
   fastAuthClientId:

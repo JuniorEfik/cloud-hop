@@ -407,6 +407,29 @@ test("contract activity bounds repeated indexer throttling", async () => {
   assert.deepEqual(waits, [1_000, 2_000, 4_000, 8_000, 16_000, 30_000]);
 });
 
+test("contract activity serves fixed lower-bound totals without a history scan", async () => {
+  let fetchCalls = 0;
+  const fixedTotals = {
+    players: 100,
+    gamesStarted: 1_255,
+    verifiedScores: 806,
+    tournamentEntries: 131,
+    complete: false,
+  } as const;
+  const service = new ContractActivityService(config, {
+    fixedTotals,
+    indexerMaxAttempts: 2,
+    fetcher: async () => {
+      fetchCalls += 1;
+      return new Response(JSON.stringify({ data: [] }));
+    },
+  });
+
+  const feed = await service.getFeed();
+  assert.deepEqual(feed.totals, fixedTotals);
+  assert.equal(fetchCalls, 1);
+});
+
 test("contract activity never replaces totals with a smaller scan", async () => {
   let now = 1_000;
   let generation = 0;

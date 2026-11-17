@@ -44,6 +44,8 @@ interface ActivityServiceOptions {
   readonly fetcher?: ActivityFetcher;
   readonly now?: () => number;
   readonly wait?: (delayMs: number) => Promise<void>;
+  readonly fixedTotals?: ContractActivityTotals;
+  readonly indexerMaxAttempts?: number;
   readonly cacheTtlMs?: number;
   readonly totalsCacheTtlMs?: number;
   readonly failureBackoffBaseMs?: number;
@@ -226,6 +228,8 @@ export class ContractActivityService {
   readonly #fetcher: ActivityFetcher;
   readonly #now: () => number;
   readonly #wait: (delayMs: number) => Promise<void>;
+  readonly #fixedTotals: ContractActivityTotals | null;
+  readonly #indexerMaxAttempts: number;
   readonly #cacheTtlMs: number;
   readonly #totalsCacheTtlMs: number;
   readonly #failureBackoffBaseMs: number;
@@ -249,6 +253,16 @@ export class ContractActivityService {
     this.#wait =
       options.wait ??
       ((delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)));
+    this.#fixedTotals = options.fixedTotals ?? null;
+    this.#indexerMaxAttempts =
+      options.indexerMaxAttempts ?? INDEXER_MAX_ATTEMPTS;
+    if (
+      !Number.isInteger(this.#indexerMaxAttempts) ||
+      this.#indexerMaxAttempts < 1 ||
+      this.#indexerMaxAttempts > INDEXER_MAX_ATTEMPTS
+    ) {
+      throw new Error("Activity indexer attempts are invalid.");
+    }
     this.#cacheTtlMs = options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
     this.#totalsCacheTtlMs =
       options.totalsCacheTtlMs ?? DEFAULT_TOTALS_CACHE_TTL_MS;
@@ -276,7 +290,7 @@ export class ContractActivityService {
     url.searchParams.set("limit", INDEXER_PAGE_SIZE.toString());
     if (cursor !== null) url.searchParams.set("next", cursor);
     if (method !== null) url.searchParams.set("method", method);
-    for (let attempt = 0; attempt < INDEXER_MAX_ATTEMPTS; attempt += 1) {
+    for (let attempt = 0; attempt < this.#indexerMaxAttempts; attempt += 1) {
       const response = await this.#fetcher(url.toString(), {
         headers: {
           accept: "application/json",
@@ -285,7 +299,7 @@ export class ContractActivityService {
         signal: AbortSignal.timeout(4_500),
       });
       if (response.ok) return parseActivityPage(await response.json());
-      if (response.status !== 429 || attempt === INDEXER_MAX_ATTEMPTS - 1) {
+      if (response.status !== 429 || attempt === this.#indexerMaxAttempts - 1) {
         throw new Error(`NearBlocks returned ${response.status}.`);
       }
       const retryAfter = response.headers.get("retry-after");
@@ -397,6 +411,7 @@ export class ContractActivityService {
   }
 
   async #getTotals(): Promise<ContractActivityTotals> {
+    if (this.#fixedTotals !== null) return this.#fixedTotals;
     const now = this.#now();
     if (this.#totalsCache !== null && this.#totalsCache.expiresAt > now) {
       return this.#totalsCache.totals;
