@@ -43,6 +43,7 @@ type ActivityFetcher = (
 interface ActivityServiceOptions {
   readonly fetcher?: ActivityFetcher;
   readonly now?: () => number;
+  readonly wait?: (delayMs: number) => Promise<void>;
   readonly cacheTtlMs?: number;
   readonly totalsCacheTtlMs?: number;
   readonly failureBackoffBaseMs?: number;
@@ -50,9 +51,9 @@ interface ActivityServiceOptions {
   readonly reader?: ContractViewReader;
 }
 
-interface IndexedTransactionPage {
+interface IndexedActivityPage {
   readonly cursor: string | null;
-  readonly txns: readonly unknown[];
+  readonly receipts: readonly unknown[];
 }
 
 const ACCOUNT_ID_PATTERN =
@@ -64,43 +65,55 @@ const METHOD_KINDS = new Map<string, ContractActivityKind>([
   ["join_tournament", "tournament-joined"],
   ["abandon_session", "session-abandoned"],
 ]);
+const TOTAL_METHODS = [
+  "create_session",
+  "submit_verified_score",
+  "join_tournament",
+] as const;
+type TotalMethod = (typeof TOTAL_METHODS)[number];
 const DEFAULT_CACHE_TTL_MS = 10_000;
-const DEFAULT_TOTALS_CACHE_TTL_MS = 60_000;
+const DEFAULT_TOTALS_CACHE_TTL_MS = 5 * 60_000;
 const DEFAULT_FAILURE_BACKOFF_BASE_MS = 5_000;
 const DEFAULT_FAILURE_BACKOFF_MAX_MS = 60_000;
 const MAX_ACTIVITY_ROWS = 12;
-const MAX_TOTAL_PAGES = 40;
+const INDEXER_PAGE_SIZE = 25;
+const INDEXER_MAX_ATTEMPTS = 7;
+const INDEXER_RETRY_BASE_MS = 1_000;
+const INDEXER_RETRY_MAX_MS = 30_000;
+const MAX_TOTAL_PAGES = 100;
 
 const asRecord = (value: unknown): Record<string, unknown> | null =>
   typeof value === "object" && value !== null
     ? (value as Record<string, unknown>)
     : null;
 
-const parseTransactionPage = (value: unknown): IndexedTransactionPage => {
+const parseActivityPage = (value: unknown): IndexedActivityPage => {
   const body = asRecord(value);
+  const meta = asRecord(body?.meta);
+  const nextPage = meta?.next_page;
   if (
     body === null ||
-    !Array.isArray(body.txns) ||
-    (body.cursor !== undefined &&
-      body.cursor !== null &&
-      typeof body.cursor !== "string")
+    !Array.isArray(body.data) ||
+    (nextPage !== undefined && nextPage !== null && typeof nextPage !== "string")
   ) {
     throw new Error("NearBlocks returned an invalid activity response.");
   }
   return {
-    cursor: typeof body.cursor === "string" ? body.cursor : null,
-    txns: body.txns,
+    cursor: typeof nextPage === "string" ? nextPage : null,
+    receipts: body.data,
   };
 };
 
 const transactionMethods = (
   value: unknown,
+  contractId: string,
 ): readonly { readonly method: string; readonly hash: string }[] => {
   const transaction = asRecord(value);
   const transactionHash = transaction?.transaction_hash;
   if (
     transaction === null ||
-    asRecord(transaction.receipt_outcome)?.status !== true ||
+    asRecord(transaction.outcome)?.status !== true ||
+    transaction.receiver_account_id !== contractId ||
     typeof transactionHash !== "string" ||
     !TRANSACTION_HASH_PATTERN.test(transactionHash) ||
     !Array.isArray(transaction.actions)
@@ -117,6 +130,7 @@ const transactionMethods = (
 
 const parseTransactions = (
   transactions: readonly unknown[],
+  contractId: string,
   explorerUrl: string,
 ): readonly ContractActivity[] => {
   const rows: ContractActivity[] = [];
@@ -124,7 +138,7 @@ const parseTransactions = (
   for (const value of transactions) {
     const transaction = asRecord(value);
     const playerId = transaction?.predecessor_account_id;
-    const timestampNs = transaction?.block_timestamp;
+    const timestampNs = asRecord(transaction?.block)?.block_timestamp;
     if (
       transaction === null ||
       typeof playerId !== "string" ||
@@ -137,7 +151,7 @@ const parseTransactions = (
       continue;
     }
 
-    for (const action of transactionMethods(transaction)) {
+    for (const action of transactionMethods(transaction, contractId)) {
       const kind = METHOD_KINDS.get(action.method);
       if (kind === undefined) continue;
       const id = `${action.hash}:${kind}`;
@@ -168,28 +182,19 @@ const parseTransactions = (
 
 const parseScore = (value: unknown): number | null => {
   const body = asRecord(value);
-  if (body === null || !Array.isArray(body.txns)) return null;
-  for (const value of body.txns) {
-    const transaction = asRecord(value);
-    if (transaction === null || !Array.isArray(transaction.actions)) continue;
-    for (const value of transaction.actions) {
-      const action = asRecord(value);
-      if (action?.method !== "submit_verified_score" || typeof action.args !== "string") {
-        continue;
-      }
-      try {
-        const args = asRecord(JSON.parse(action.args));
-        if (
-          typeof args?.score === "number" &&
-          Number.isInteger(args.score) &&
-          args.score >= 0 &&
-          args.score <= 1_000_000
-        ) {
-          return args.score;
-        }
-      } catch {
-        continue;
-      }
+  const transaction = asRecord(body?.data);
+  if (transaction === null || !Array.isArray(transaction.actions)) return null;
+  for (const value of transaction.actions) {
+    const action = asRecord(value);
+    if (action?.method !== "submit_verified_score") continue;
+    const args = asRecord(asRecord(action.args)?.args_json);
+    if (
+      typeof args?.score === "number" &&
+      Number.isInteger(args.score) &&
+      args.score >= 0 &&
+      args.score <= 1_000_000
+    ) {
+      return args.score;
     }
   }
   return null;
@@ -197,11 +202,12 @@ const parseScore = (value: unknown): number | null => {
 
 const countTransactions = (
   transactions: readonly unknown[],
+  contractId: string,
   seen: Set<string>,
   totals: { gamesStarted: number; verifiedScores: number; tournamentEntries: number },
 ): void => {
   for (const transaction of transactions) {
-    for (const action of transactionMethods(transaction)) {
+    for (const action of transactionMethods(transaction, contractId)) {
       const id = `${action.hash}:${action.method}`;
       if (seen.has(id)) continue;
       seen.add(id);
@@ -219,6 +225,7 @@ export class ContractActivityService {
   >;
   readonly #fetcher: ActivityFetcher;
   readonly #now: () => number;
+  readonly #wait: (delayMs: number) => Promise<void>;
   readonly #cacheTtlMs: number;
   readonly #totalsCacheTtlMs: number;
   readonly #failureBackoffBaseMs: number;
@@ -230,6 +237,7 @@ export class ContractActivityService {
     readonly expiresAt: number;
     readonly totals: ContractActivityTotals;
   } | null = null;
+  #totalsHighWater: ContractActivityTotals | null = null;
   #refreshInFlight: Promise<ContractActivityFeed> | null = null;
   #retryAt = 0;
   #consecutiveFailures = 0;
@@ -238,6 +246,9 @@ export class ContractActivityService {
     this.#config = config;
     this.#fetcher = options.fetcher ?? fetch;
     this.#now = options.now ?? Date.now;
+    this.#wait =
+      options.wait ??
+      ((delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)));
     this.#cacheTtlMs = options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
     this.#totalsCacheTtlMs =
       options.totalsCacheTtlMs ?? DEFAULT_TOTALS_CACHE_TTL_MS;
@@ -254,29 +265,47 @@ export class ContractActivityService {
     this.#reader = options.reader;
   }
 
-  async #fetchPage(cursor: string | null = null): Promise<IndexedTransactionPage> {
+  async #fetchPage(
+    cursor: string | null = null,
+    method: TotalMethod | null = null,
+  ): Promise<IndexedActivityPage> {
     const url = new URL(
-      `/v1/account/${encodeURIComponent(this.#config.contractId)}/txns`,
+      `/v3/accounts/${encodeURIComponent(this.#config.contractId)}/receipts`,
       this.#config.indexerUrl,
     );
-    url.searchParams.set("limit", "25");
-    url.searchParams.set("order", "desc");
-    if (cursor !== null) url.searchParams.set("cursor", cursor);
-    const response = await this.#fetcher(url.toString(), {
-      headers: {
-        accept: "application/json",
-        "user-agent": "Cloud-Hop/1.0",
-      },
-      signal: AbortSignal.timeout(4_500),
-    });
-    if (!response.ok) throw new Error(`NearBlocks returned ${response.status}.`);
-    return parseTransactionPage(await response.json());
+    url.searchParams.set("limit", INDEXER_PAGE_SIZE.toString());
+    if (cursor !== null) url.searchParams.set("next", cursor);
+    if (method !== null) url.searchParams.set("method", method);
+    for (let attempt = 0; attempt < INDEXER_MAX_ATTEMPTS; attempt += 1) {
+      const response = await this.#fetcher(url.toString(), {
+        headers: {
+          accept: "application/json",
+          "user-agent": "Cloud-Hop/1.0",
+        },
+        signal: AbortSignal.timeout(4_500),
+      });
+      if (response.ok) return parseActivityPage(await response.json());
+      if (response.status !== 429 || attempt === INDEXER_MAX_ATTEMPTS - 1) {
+        throw new Error(`NearBlocks returned ${response.status}.`);
+      }
+      const retryAfter = response.headers.get("retry-after");
+      const retryAfterSeconds = retryAfter === null ? Number.NaN : Number(retryAfter);
+      const retryDelay =
+        Number.isFinite(retryAfterSeconds) && retryAfterSeconds >= 0
+          ? Math.min(retryAfterSeconds * 1_000, INDEXER_RETRY_MAX_MS)
+          : Math.min(
+              INDEXER_RETRY_BASE_MS * 2 ** attempt,
+              INDEXER_RETRY_MAX_MS,
+            );
+      await this.#wait(retryDelay);
+    }
+    throw new Error("NearBlocks activity retries were exhausted.");
   }
 
   async #scoreFor(transactionHash: string): Promise<number | null> {
     try {
       const url = new URL(
-        `/v1/txns/${encodeURIComponent(transactionHash)}`,
+        `/v3/txns/${encodeURIComponent(transactionHash)}`,
         this.#config.indexerUrl,
       );
       const response = await this.#fetcher(url.toString(), {
@@ -329,45 +358,93 @@ export class ContractActivityService {
     }
   }
 
-  async #getTotals(
-    initialPage: IndexedTransactionPage,
-  ): Promise<ContractActivityTotals> {
+  async #scanMethod(method: TotalMethod): Promise<{
+    readonly count: number;
+    readonly complete: boolean;
+  }> {
+    const counts = { gamesStarted: 0, verifiedScores: 0, tournamentEntries: 0 };
+    const seen = new Set<string>();
+    const seenCursors = new Set<string>();
+    let cursor: string | null = null;
+    let pages = 0;
+    while (
+      pages < MAX_TOTAL_PAGES &&
+      (cursor === null || !seenCursors.has(cursor))
+    ) {
+      let page: IndexedActivityPage;
+      try {
+        page = await this.#fetchPage(cursor, method);
+      } catch (error) {
+        throw new Error("The complete activity history could not be scanned.", {
+          cause: error,
+        });
+      }
+      countTransactions(page.receipts, this.#config.contractId, seen, counts);
+      if (cursor !== null) seenCursors.add(cursor);
+      cursor = page.cursor;
+      pages += 1;
+      if (page.receipts.length === 0) cursor = null;
+      if (cursor === null) break;
+    }
+
+    const count =
+      method === "create_session"
+        ? counts.gamesStarted
+        : method === "submit_verified_score"
+          ? counts.verifiedScores
+          : counts.tournamentEntries;
+    return { count, complete: cursor === null };
+  }
+
+  async #getTotals(): Promise<ContractActivityTotals> {
     const now = this.#now();
     if (this.#totalsCache !== null && this.#totalsCache.expiresAt > now) {
       return this.#totalsCache.totals;
     }
 
-    const counts = { gamesStarted: 0, verifiedScores: 0, tournamentEntries: 0 };
-    const seen = new Set<string>();
-    const seenCursors = new Set<string>();
-    countTransactions(initialPage.txns, seen, counts);
-    let cursor = initialPage.cursor;
-    let pages = 1;
-    let scanFailed = false;
-    while (
-      cursor !== null &&
-      pages < MAX_TOTAL_PAGES &&
-      !seenCursors.has(cursor)
-    ) {
-      seenCursors.add(cursor);
-      let page: IndexedTransactionPage;
-      try {
-        page = await this.#fetchPage(cursor);
-      } catch {
-        scanFailed = true;
-        break;
-      }
-      countTransactions(page.txns, seen, counts);
-      cursor = page.cursor;
-      pages += 1;
-      if (page.txns.length === 0) cursor = null;
+    const methodCounts = new Map<
+      TotalMethod,
+      { readonly count: number; readonly complete: boolean }
+    >();
+    for (const method of TOTAL_METHODS) {
+      methodCounts.set(method, await this.#scanMethod(method));
     }
 
-    const totals: ContractActivityTotals = {
+    const scannedTotals: ContractActivityTotals = {
       players: await this.#playerTotal(),
-      ...counts,
-      complete: cursor === null && !scanFailed,
+      gamesStarted: methodCounts.get("create_session")?.count ?? 0,
+      verifiedScores: methodCounts.get("submit_verified_score")?.count ?? 0,
+      tournamentEntries: methodCounts.get("join_tournament")?.count ?? 0,
+      complete: TOTAL_METHODS.every(
+        (method) => methodCounts.get(method)?.complete === true,
+      ),
     };
+    const previous = this.#totalsHighWater;
+    const totals: ContractActivityTotals =
+      previous === null
+        ? scannedTotals
+        : {
+            players:
+              scannedTotals.players === null
+                ? previous.players
+                : previous.players === null
+                  ? scannedTotals.players
+                  : Math.max(previous.players, scannedTotals.players),
+            gamesStarted: Math.max(
+              previous.gamesStarted,
+              scannedTotals.gamesStarted,
+            ),
+            verifiedScores: Math.max(
+              previous.verifiedScores,
+              scannedTotals.verifiedScores,
+            ),
+            tournamentEntries: Math.max(
+              previous.tournamentEntries,
+              scannedTotals.tournamentEntries,
+            ),
+            complete: scannedTotals.complete,
+          };
+    this.#totalsHighWater = totals;
     this.#totalsCache = {
       expiresAt: now + this.#totalsCacheTtlMs,
       totals,
@@ -377,9 +454,13 @@ export class ContractActivityService {
 
   async #refreshFeed(): Promise<ContractActivityFeed> {
     const page = await this.#fetchPage();
-    const totals = await this.#getTotals(page);
+    const totals = await this.#getTotals();
     const rows = await this.#enrichScores(
-      parseTransactions(page.txns, this.#config.explorerUrl),
+      parseTransactions(
+        page.receipts,
+        this.#config.contractId,
+        this.#config.explorerUrl,
+      ),
     );
     const refreshedAt = this.#now();
     const feed: ContractActivityFeed = {
