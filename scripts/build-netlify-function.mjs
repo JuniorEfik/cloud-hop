@@ -11,7 +11,6 @@ await build({
   entryPoints: [path.resolve("netlify/functions/api.mjs")],
   outfile: path.join(outputDirectory, "api.cjs"),
   bundle: true,
-  external: ["serverless-http"],
   platform: "node",
   format: "cjs",
   target: ["node22"],
