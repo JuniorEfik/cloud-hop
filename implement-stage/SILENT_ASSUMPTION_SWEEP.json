@@ -1,0 +1,20 @@
+{
+  "status": "SWEEP_UNAVAILABLE",
+  "route": {
+    "backend": "codex",
+    "host": "codex",
+    "source": "host_default",
+    "requested_model": "gpt-6-astra",
+    "requested_effort": "xhigh",
+    "actual_model": null,
+    "reviewer_route_helper": "not_found",
+    "reviewer_session": "/root/assumption_sweep"
+  },
+  "review_independence": "unknown",
+  "acceptance_status": "REVIEW_UNAVAILABLE",
+  "verdict": null,
+  "undeclared": null,
+  "stale_rows": null,
+  "semantic_undeclared": null,
+  "raw_response": "Agent errored: unexpected status 503 Service Unavailable: 当前分组 default 下对于模型 gpt-6-astra 无可用渠道 (request id: 20261117225213234405720fq6gxkkjOnLZi), url: https://agentrouter.org/v1/responses"
+}
